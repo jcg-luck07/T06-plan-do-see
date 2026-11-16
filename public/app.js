@@ -24,7 +24,9 @@
     }
     return el;
   }
+  let mutations = 0;
   async function api(path, opts = {}) {
+    if (opts.method && opts.method !== 'GET') mutations++;
     const res = await fetch('/api/' + path, {
       method: opts.method || 'GET',
       headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
@@ -72,6 +74,7 @@
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== '' && v != null)).toString();
     location.hash = tab + (qs ? '?' + qs : '');
   }
+  let calCache = null; // 달력이 방금 받은 자료 (같은 화면에서 팝업만 여닫을 때 다시 쓴다)
   let lastHash = null;
   let sameView = false; // 같은 주소를 다시 그리는 중이면 true (체크·저장 뒤 새로고침)
   async function render() {
@@ -326,7 +329,8 @@
   function closeDialogQuietly() { if (dlg.open) dlg.close(); }
 
   async function calView(q) {
-    const today = (await api('today')).today;
+    const fresh = (c) => c && sameView && Date.now() - c.at < 60000 && c.mut === mutations;
+    const today = fresh(calCache) ? calCache.today : (await api('today')).today;
     const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
     let d = isDate(q.d) ? q.d : (/^\d{4}-\d{2}$/.test(q.m || '') ? (today.startsWith(q.m) ? today : q.m + '-01') : today);
     const v = ['month', 'week', 'day'].includes(q.v) ? q.v : 'month';
@@ -340,8 +344,14 @@
     else { rs = d; re = d; }
     const from = rs < mStart ? rs : mStart;
     const to = re > mEnd ? re : mEnd;
-    const [tasks, recent] = await Promise.all([
-      api(`tasks?from=${from}&to=${to}&sort=due`), api('tasks?sort=created&dir=desc')]);
+    let tasks, recent;
+    if (fresh(calCache) && calCache.range === from + '|' + to) {
+      ({ tasks, recent } = calCache);
+    } else {
+      [tasks, recent] = await Promise.all([
+        api(`tasks?from=${from}&to=${to}&sort=due`), api('tasks?sort=created&dir=desc')]);
+      calCache = { range: from + '|' + to, tasks, recent, today, at: Date.now(), mut: mutations };
+    }
     const byDate = {};
     for (const t of tasks) (byDate[t.due_date] = byDate[t.due_date] || []).push(t);
 
