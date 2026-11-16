@@ -323,9 +323,23 @@
     if (tab === "cal" && q.p) go("cal", { d: q.d, v: q.v });
     else if (dlg.open) dlg.close();
   }
-  dlg.addEventListener("cancel", (ev) => { ev.preventDefault(); closeDlg(); }); // Esc
+  // 적던 내용 지키기: 사용자가 글자를 입력한 칸에 내용이 남아 있으면 닫기 전에 물어봅니다.
+  dlg.addEventListener('input', (ev) => { if (ev.isTrusted && ev.target.dataset) ev.target.dataset.touched = '1'; });
+  function hasUnsaved() {
+    return [...dlg.querySelectorAll('input[data-touched], textarea[data-touched]')]
+      .some((el) => el.type !== 'checkbox' && String(el.value).trim() !== '');
+  }
+  // 사용자가 직접 닫으려 할 때(닫기 버튼·Esc·바깥 클릭)는 이 함수를 거칩니다.
+  function requestClose() {
+    if (hasUnsaved() && !confirm('적던 내용이 아직 저장되지 않았어요. 닫으면 사라져요. 그래도 닫을까요?')) return;
+    closeDlg();
+  }
+  dlg.addEventListener("cancel", (ev) => { ev.preventDefault(); requestClose(); }); // Esc
   dlg.addEventListener("close", closeDlg); // 다른 방법으로 닫혔을 때도 주소를 맞춤
-  dlg.addEventListener("click", (ev) => { if (ev.target === dlg) closeDlg(); }); // 바깥을 누르면 닫기
+  // 바깥을 누르면 닫기: 누른 곳도 바깥이고 뗀 곳도 바깥일 때만. (창 안에서 드래그하다 바깥에서 놓은 경우는 무시)
+  let downOnBackdrop = false;
+  dlg.addEventListener('mousedown', (ev) => { downOnBackdrop = ev.target === dlg; });
+  dlg.addEventListener('click', (ev) => { if (ev.target === dlg && downOnBackdrop) requestClose(); downOnBackdrop = false; });
   function closeDialogQuietly() { if (dlg.open) dlg.close(); }
 
   async function calView(q) {
@@ -489,7 +503,7 @@
     const panel = h('div', { class: 'card', id: 'daypanel' },
       h('div', { class: 'dlghead' },
         h('h2', {}, `${date} (${DOW[dowOf(date)]})${date === today ? ' · 오늘' : ''}`),
-        h('button', { type: 'button', onclick: closeDlg }, '닫기')));
+        h('button', { type: 'button', onclick: requestClose }, '닫기')));
 
     const est = list.reduce((s, t) => s + t.estimated_minutes, 0);
     const act = list.reduce((s, t) => s + t.actual_minutes, 0);
