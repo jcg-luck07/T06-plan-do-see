@@ -14,3 +14,9 @@ dist/
 # 기타
 .DS_Store
 Thumbs.db
+
+# 로컬 시험용 DB
+.localdb/
+
+# 도구 설정
+.claude/

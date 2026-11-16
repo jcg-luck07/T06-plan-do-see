@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plan-Do-See 다이어리</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="logo" aria-hidden="true">☑</span>
+    <h1>Plan-Do-See 다이어리</h1>
+  </header>
+  <div class="shell">
+    <aside class="sidenav">
+      <nav id="nav" aria-label="화면 이동">
+        <a href="#cal" data-tab="today" id="nav-today"><span aria-hidden="true">⌂</span> 오늘</a>
+        <a href="#cal" data-tab="cal"><span aria-hidden="true">▦</span> 다이어리</a>
+        <a href="#list" data-tab="list"><span aria-hidden="true">≡</span> 계획(할 일) 목록</a>
+        <a href="#see" data-tab="see"><span aria-hidden="true">▮</span> 통계·돌아보기</a>
+        <a href="/api/export" download="plan-do-see-export.json" id="export"><span aria-hidden="true">⇩</span> 내 자료 내보내기</a>
+      </nav>
+    </aside>
+    <div class="content">
+      <p class="notice" id="notice" role="note">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</p>
+      <div class="cols">
+        <aside id="side" aria-label="요약"></aside>
+        <main id="app" aria-live="polite">불러오는 중…</main>
+      </div>
+    </div>
+  </div>
+  <dialog id="dlg" aria-label="날짜별 기록"></dialog>
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+{
+  "name": "pds-schema-v2",
+  "description": "플랜두씨 다이어리의 최종 데이터베이스 약속: 표, 항목, 관계, 날짜·단위 규칙. 실제 정의는 lib/schema.js 와 같습니다. 계획과 할 일은 같은 것이라서 'tasks' 표의 한 줄이 계획(할 일) 하나입니다.",
+  "database": "PostgreSQL (Supabase)",
+  "rules": {
+    "plan_is_task": "계획과 할 일은 같은 것이다. Plan = tasks 한 줄, Do = 그 줄을 달성했는지(completions)와 실제로 한 일(runs), See = 돌아보기(reviews).",
+    "date": "날짜(date)는 서울 기준 달력 날짜 'YYYY-MM-DD'로 저장하고 그대로 보여 준다.",
+    "timestamp": "시각(timestamptz)은 UTC로 저장하고(ISO 8601), 화면에서는 Asia/Seoul 로 바꿔 보여 준다. 시간대 표시 없이 들어온 시각은 서울(+09:00)로 해석한다.",
+    "today": "'오늘'은 서울 기준 날짜다: (now() at time zone 'Asia/Seoul')::date",
+    "period": "기간 = start_date ~ due_date. 시작일을 비우면 마감일과 같은 날로 저장한다. 달력에는 마감일 칸에 나온다.",
+    "time_unit": "모든 시간 값(예상·실제)은 '분(minute)' 정수다. 저장할 때도 보여 줄 때도 같다.",
+    "priority": "1=높음, 2=중간, 3=낮음",
+    "tags": "소문자로 정리해 쉼표로 이은 글자 (예: 'study,코딩')",
+    "delete": "계획(할 일)은 지우면 deleted_at 만 채운다(되살릴 수 있고 기록은 남는다). 집계와 목록에서는 빠진다.",
+    "security": "모든 표에 행 단위 보안(RLS)을 켜 두었고, 브라우저는 DB에 직접 접근하지 않는다. 서버 함수만 DATABASE_URL(비밀값, 환경변수)로 접근한다.",
+    "export_format": "pds-export-v2 (GET /api/export, JSON 파일 하나)"
+  },
+  "tables": {
+    "tasks": {
+      "description": "계획(할 일)의 현재 값. 고쳐도 id 는 그대로. 계획과 할 일은 같은 것이라 표가 하나다.",
+      "columns": {
+        "id": "integer, 기본키, 자동 번호",
+        "title": "text, 필수",
+        "start_date": "date, 비어도 됨(비우면 마감일과 같은 날로 저장)",
+        "due_date": "date, 비어도 됨, start_date 이상",
+        "priority": "smallint 1~3, 기본 2",
+        "tags": "text",
+        "success_criteria": "text, 성공 기준(비어도 됨)",
+        "estimated_minutes": "integer 분, 0 이상",
+        "status": "'doing'(미달성) | 'done'(달성)",
+        "done_at": "timestamptz",
+        "carried_lesson": "text, 돌아보기에서 넘어온 고칠 점(없으면 비어 있음)",
+        "carried_from_review_id": "integer, 어느 돌아보기에서 넘어왔는지",
+        "deleted_at": "timestamptz, 지운 시각(비어 있으면 살아 있음)",
+        "created_at": "timestamptz",
+        "updated_at": "timestamptz"
+      }
+    },
+    "task_revisions": {
+      "description": "계획(할 일)의 모든 버전. version 1 이 처음 세운 계획이며 절대 바뀌지 않는다. 고칠 때마다 새 버전이 쌓인다.",
+      "columns": {
+        "id": "integer, 기본키",
+        "task_id": "integer → tasks.id (지워지면 함께 지워짐)",
+        "version": "integer, (task_id, version) 유일",
+        "title / start_date / due_date / priority / tags / success_criteria / estimated_minutes": "그 시점의 값",
+        "change_note": "text, 고친 이유",
+        "changed_at": "timestamptz"
+      }
+    },
+    "completions": {
+      "description": "달성(완료) 눌림 기록. 중복 완료를 DB가 막는다.",
+      "columns": {
+        "id": "integer, 기본키",
+        "task_id": "integer → tasks.id",
+        "idempotency_key": "text, 유일(같은 요청을 알아보는 키)",
+        "completed_at": "timestamptz",
+        "reverted_at": "timestamptz, 되돌린 시각"
+      },
+      "constraints": [
+        "idempotency_key 유일",
+        "task_id 당 reverted_at 이 비어 있는 행은 1개만 (부분 유일 인덱스 completions_one_active) → 키가 달라도 완료 중복 불가"
+      ]
+    },
+    "runs": {
+      "description": "실제로 한 일 기록. 계획 값을 바꾸지 않는다.",
+      "columns": {
+        "id": "integer, 기본키",
+        "task_id": "integer → tasks.id",
+        "started_at": "timestamptz, 필수",
+        "ended_at": "timestamptz, 필수, started_at 이상",
+        "actual_minutes": "integer 분, 0 이상",
+        "blocked_reason": "text, 비어 있으면 막히지 않은 기록",
+        "idempotency_key": "text, 유일(비어도 됨)",
+        "created_at": "timestamptz"
+      }
+    },
+    "reviews": {
+      "description": "돌아보기 저장본: 그때의 숫자와 고칠 점, 넘어간 다음 계획.",
+      "columns": {
+        "id": "integer, 기본키",
+        "period_from / period_to": "date, 마감일 범위(비어 있으면 제한 없음)",
+        "snapshot": "jsonb {planned, done, late, blocked, estimated_minutes, actual_minutes, diff_minutes}",
+        "lesson": "text, 고칠 점 한 줄",
+        "next_task_id": "integer → tasks.id (다음 계획으로 새로 만들어진 한 줄)",
+        "created_at": "timestamptz"
+      }
+    }
+  },
+  "relations": [
+    "tasks 1 ─ N task_revisions",
+    "tasks 1 ─ N runs",
+    "tasks 1 ─ N completions",
+    "reviews 1 ─ 1 tasks (reviews.next_task_id: 다음 계획)"
+  ],
+  "review_formulas": {
+    "planned": "범위 안의, 지우지 않은 계획(할 일) 수",
+    "done": "그중 지금 status='done' 인 수",
+    "late": "status<>'done' 이고 due_date 가 서울 기준 오늘보다 앞선 수 (달성한 것은 세지 않음)",
+    "blocked": "blocked_reason 에 (공백 제외) 글자가 하나라도 있는 실행 기록이 있는 계획 수",
+    "estimated_minutes": "대상 계획의 estimated_minutes 합계",
+    "actual_minutes": "대상 계획의 runs.actual_minutes 합계",
+    "diff_minutes": "actual_minutes - estimated_minutes (없으면 0)"
+  },
+  "drilldown": {
+    "계획 수": "#list",
+    "달성 수": "#list?status=done",
+    "지연 수": "#list?late=1",
+    "막힘 수": "#list?blocked=1",
+    "예상/실제 시간": "#list (해당 범위의 전체 계획, 시간 열에 예상/실제 표시)"
+  }
+}
