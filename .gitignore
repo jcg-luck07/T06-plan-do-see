@@ -1,0 +1,16 @@
+# 비밀값 (절대 올리지 않음)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 의존성/빌드
+node_modules/
+.next/
+dist/
+.vercel/
+
+# 기타
+.DS_Store
+Thumbs.db
